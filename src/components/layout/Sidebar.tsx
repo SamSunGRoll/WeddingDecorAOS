@@ -91,8 +91,8 @@ export function Sidebar() {
               src={tieInLogo}
               alt="Tie In logo"
               className={cn(
-                'h-10 w-10 rounded-xl object-contain bg-white p-1 shadow-sm ring-1 ring-border/60',
-                collapsed && 'h-9 w-9 p-0.5'
+                'h-14 w-14 rounded-xl object-contain bg-white p-1 shadow-sm ring-1 ring-border/60',
+                collapsed && 'h-12 w-12 p-0.5'
               )}
             />
             {!collapsed && (
