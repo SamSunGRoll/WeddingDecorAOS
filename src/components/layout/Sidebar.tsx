@@ -98,6 +98,7 @@ export function Sidebar() {
             {!collapsed && (
               <div className="flex flex-col min-w-0">
                 <span className="text-sm font-semibold text-foreground truncate">Tie in</span>
+                <span className="text-[10px] text-muted-foreground leading-tight">The Wedding Collective</span>
               </div>
             )}
           </div>
