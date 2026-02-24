@@ -25,12 +25,12 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  Sparkles,
   Users,
   Boxes,
   Wand2,
 } from 'lucide-react'
 import { useAuth, type Module } from '@/hooks/useAuth'
+import tieInLogo from '@/assets/tie-in_logo.png'
 import type { UserRole } from '@/types'
 
 interface NavItem {
@@ -86,13 +86,18 @@ export function Sidebar() {
       <div className="flex h-full flex-col">
         {/* Logo */}
         <div className="flex h-16 items-center justify-between border-b border-border px-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-gold-400 to-gold-600 shadow-sm">
-              <Sparkles className="h-5 w-5 text-white" />
-            </div>
+          <div className="flex items-center gap-3 min-w-0">
+            <img
+              src={tieInLogo}
+              alt="Tie In logo"
+              className={cn(
+                'h-9 w-9 rounded-xl object-contain bg-white p-1 shadow-sm ring-1 ring-border/60',
+                collapsed && 'h-8 w-8 p-0.5'
+              )}
+            />
             {!collapsed && (
-              <div className="flex flex-col">
-                <span className="text-sm font-semibold text-foreground">Tie In</span>
+              <div className="flex flex-col min-w-0">
+                <span className="text-sm font-semibold text-foreground truncate">Tie In</span>
                 <span className="text-[10px] text-muted-foreground">Wedding Décor Ops</span>
               </div>
             )}
