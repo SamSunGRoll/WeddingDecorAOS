@@ -89,7 +89,7 @@ export function Sidebar() {
           <div className="flex items-center gap-3 min-w-0">
             <img
               src={tieInLogo}
-              alt="Tie In logo"
+              alt="tie-in logo"
               className={cn(
                 'h-14 w-14 rounded-xl object-contain bg-white p-1 shadow-sm ring-1 ring-border/60',
                 collapsed && 'h-12 w-12 p-0.5'
@@ -97,8 +97,7 @@ export function Sidebar() {
             />
             {!collapsed && (
               <div className="flex flex-col min-w-0">
-                <span className="text-sm font-semibold text-foreground truncate">Tie In</span>
-                <span className="text-[10px] text-muted-foreground">Wedding Décor Ops</span>
+                <span className="text-sm font-semibold text-foreground truncate">Tie in</span>
               </div>
             )}
           </div>

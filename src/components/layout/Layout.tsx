@@ -54,7 +54,7 @@ export function Layout() {
           >
             <Menu className="h-5 w-5" />
           </Button>
-          <span className="text-lg font-semibold">Tie In</span>
+          <span className="text-lg font-semibold">Tie in</span>
         </div>
 
         {/* Desktop Header */}
