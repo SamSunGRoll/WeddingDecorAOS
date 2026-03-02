@@ -1,7 +1,7 @@
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
-import { recentActivity } from '@/data/dummy-data'
 import { getInitials, formatDateTime } from '@/lib/utils'
 import {
   Calculator,
@@ -11,6 +11,7 @@ import {
   CheckCircle,
 } from 'lucide-react'
 import type { Activity } from '@/types'
+import { api } from '@/lib/api'
 
 const activityIcons: Record<Activity['type'], React.ComponentType<{ className?: string }>> = {
   costing: Calculator,
@@ -29,6 +30,12 @@ const activityColors: Record<Activity['type'], string> = {
 }
 
 export function ActivityPanel() {
+  const [recentActivity, setRecentActivity] = useState<Activity[]>([])
+
+  useEffect(() => {
+    void api.getActivities().then(setRecentActivity).catch(() => setRecentActivity([]))
+  }, [])
+
   return (
     <Card>
       <CardHeader className="pb-3">

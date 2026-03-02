@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -25,9 +25,9 @@ import {
   LogOut,
   HelpCircle,
 } from 'lucide-react'
-import { notifications } from '@/data/dummy-data'
 import { getInitials } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
+import { api } from '@/lib/api'
 
 const pageTitles: Record<string, string> = {
   '/': 'Dashboard',
@@ -61,7 +61,14 @@ const roleLabels: Record<string, string> = {
 export function Header() {
   const location = useLocation()
   const [searchOpen, setSearchOpen] = useState(false)
-  const { user, role } = useAuth()
+  const navigate = useNavigate()
+  const { user, role, logout } = useAuth()
+  const [notifications, setNotifications] = useState<Array<{ id: string; title: string; message: string; read: boolean }>>([])
+
+  useEffect(() => {
+    void api.getNotifications().then(setNotifications).catch(() => setNotifications([]))
+  }, [])
+
   const unreadCount = notifications.filter((n) => !n.read).length
 
   const pageTitle = pageTitles[location.pathname] || 'Page'
@@ -172,7 +179,7 @@ export function Header() {
               <div className="hidden flex-col items-start md:flex">
                 <span className="text-sm font-medium">{user?.name}</span>
                 <span className="text-xs text-muted-foreground">
-                  {roleLabels[role]}
+                  {role ? roleLabels[role] : 'User'}
                 </span>
               </div>
             </Button>
@@ -193,7 +200,13 @@ export function Header() {
               Help & Support
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive focus:text-destructive">
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => {
+                logout()
+                navigate('/login')
+              }}
+            >
               <LogOut className="mr-2 h-4 w-4" />
               Log out
             </DropdownMenuItem>

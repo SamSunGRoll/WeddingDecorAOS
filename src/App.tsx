@@ -1,6 +1,6 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { AuthProvider } from '@/hooks/useAuth'
+import { AuthProvider, useAuth } from '@/hooks/useAuth'
 import { Layout } from '@/components/layout'
 import {
   Dashboard,
@@ -11,7 +11,23 @@ import {
   Reports,
   Inventory,
   AIFeatures,
+  Settings,
+  Login,
 } from '@/pages'
+
+function ProtectedLayout() {
+  const { isAuthenticated, loading } = useAuth()
+
+  if (loading) {
+    return <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">Loading...</div>
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />
+  }
+
+  return <Layout />
+}
 
 function App() {
   return (
@@ -19,7 +35,8 @@ function App() {
       <TooltipProvider>
         <BrowserRouter>
           <Routes>
-            <Route element={<Layout />}>
+            <Route path="/login" element={<Login />} />
+            <Route element={<ProtectedLayout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/costing" element={<CostingEngine />} />
               <Route path="/materials" element={<MaterialEstimation />} />
@@ -28,6 +45,8 @@ function App() {
               <Route path="/designs" element={<DesignRepository />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/ai-features" element={<AIFeatures />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>
         </BrowserRouter>

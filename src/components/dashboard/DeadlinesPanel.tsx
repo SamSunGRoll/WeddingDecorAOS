@@ -1,10 +1,11 @@
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { upcomingDeadlines } from '@/data/dummy-data'
 import { formatDate } from '@/lib/utils'
 import { Clock, AlertTriangle, CheckCircle, ChevronRight } from 'lucide-react'
 import type { Deadline } from '@/types'
+import { api } from '@/lib/api'
 
 const statusConfig: Record<
   Deadline['status'],
@@ -16,6 +17,12 @@ const statusConfig: Record<
 }
 
 export function DeadlinesPanel() {
+  const [upcomingDeadlines, setUpcomingDeadlines] = useState<Deadline[]>([])
+
+  useEffect(() => {
+    void api.getDeadlines().then(setUpcomingDeadlines).catch(() => setUpcomingDeadlines([]))
+  }, [])
+
   return (
     <Card>
       <CardHeader className="pb-3">

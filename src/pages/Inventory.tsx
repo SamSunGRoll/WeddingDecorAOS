@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -32,49 +32,83 @@ import {
   Truck,
   BarChart3,
 } from 'lucide-react'
-import { propCategories } from '@/data/dummy-data'
 import { formatCurrency, cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
-
-interface InventoryItem {
-  id: string
-  name: string
-  category: string
-  totalQuantity: number
-  available: number
-  reserved: number
-  inUse: number
-  condition: 'excellent' | 'good' | 'fair' | 'needs_repair'
-  lastUsed: string
-  nextBooking?: string
-  value: number
-  location: string
-}
-
-const inventoryItems: InventoryItem[] = [
-  { id: 'inv1', name: 'Crystal Chandeliers', category: 'Lighting', totalQuantity: 12, available: 5, reserved: 4, inUse: 3, condition: 'excellent', lastUsed: '2024-02-25', nextBooking: '2024-03-10', value: 180000, location: 'Warehouse A' },
-  { id: 'inv2', name: 'Brass Urlis (Large)', category: 'Decor', totalQuantity: 40, available: 25, reserved: 10, inUse: 5, condition: 'good', lastUsed: '2024-02-20', nextBooking: '2024-03-15', value: 100000, location: 'Warehouse A' },
-  { id: 'inv3', name: 'Floral Pillars', category: 'Structure', totalQuantity: 24, available: 16, reserved: 8, inUse: 0, condition: 'excellent', lastUsed: '2024-02-18', value: 240000, location: 'Warehouse B' },
-  { id: 'inv4', name: 'King Throne Set', category: 'Furniture', totalQuantity: 4, available: 2, reserved: 1, inUse: 1, condition: 'excellent', lastUsed: '2024-02-22', nextBooking: '2024-03-08', value: 140000, location: 'Warehouse A' },
-  { id: 'inv5', name: 'Round Dining Tables', category: 'Furniture', totalQuantity: 100, available: 60, reserved: 25, inUse: 15, condition: 'good', lastUsed: '2024-02-28', nextBooking: '2024-03-05', value: 150000, location: 'Warehouse B' },
-  { id: 'inv6', name: 'LED String Lights', category: 'Lighting', totalQuantity: 200, available: 120, reserved: 50, inUse: 30, condition: 'good', lastUsed: '2024-02-26', value: 60000, location: 'Warehouse A' },
-  { id: 'inv7', name: 'Vintage Photo Frames', category: 'Props', totalQuantity: 50, available: 35, reserved: 10, inUse: 5, condition: 'fair', lastUsed: '2024-02-15', value: 25000, location: 'Warehouse C' },
-  { id: 'inv8', name: 'Mandap Structure', category: 'Structure', totalQuantity: 6, available: 3, reserved: 2, inUse: 1, condition: 'excellent', lastUsed: '2024-02-20', nextBooking: '2024-03-12', value: 300000, location: 'Warehouse A' },
-  { id: 'inv9', name: 'Chiavari Chairs', category: 'Furniture', totalQuantity: 500, available: 300, reserved: 150, inUse: 50, condition: 'good', lastUsed: '2024-02-28', nextBooking: '2024-03-05', value: 250000, location: 'Warehouse B' },
-  { id: 'inv10', name: 'Flower Vases (Glass)', category: 'Decor', totalQuantity: 80, available: 50, reserved: 20, inUse: 10, condition: 'good', lastUsed: '2024-02-25', value: 40000, location: 'Warehouse C' },
-]
-
-const forecastData = [
-  { month: 'Mar', required: 45, available: 60 },
-  { month: 'Apr', required: 72, available: 60 },
-  { month: 'May', required: 85, available: 65 },
-  { month: 'Jun', required: 55, available: 70 },
-]
+import {
+  api,
+  type InventoryForecastResponse,
+  type InventoryItemResponse,
+  type InventoryRecommendationResponse,
+} from '@/lib/api'
 
 export function Inventory() {
+  const [inventoryItems, setInventoryItems] = useState<InventoryItemResponse[]>([])
+  const [forecastData, setForecastData] = useState<InventoryForecastResponse[]>([])
+  const [recommendations, setRecommendations] = useState<InventoryRecommendationResponse[]>([])
+  const [propCategories, setPropCategories] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
+  const [addOpen, setAddOpen] = useState(false)
+  const [addForm, setAddForm] = useState({
+    name: '',
+    category: '',
+    totalQuantity: 0,
+    value: 0,
+    location: '',
+  })
+  const [addError, setAddError] = useState('')
+  const [adding, setAdding] = useState(false)
   const { canEdit } = useAuth()
+
+  const loadInventoryData = () => {
+    return Promise.all([
+      api.getInventoryItems(),
+      api.getInventoryForecast(),
+      api.getInventoryRecommendations(),
+      api.getMeta(),
+    ])
+      .then(([items, forecast, recommendationData, meta]) => {
+        setInventoryItems(items)
+        setForecastData(forecast)
+        setRecommendations(recommendationData)
+        setPropCategories(meta.propCategories || [])
+      })
+      .catch(() => {
+        setInventoryItems([])
+        setForecastData([])
+        setRecommendations([])
+        setPropCategories([])
+      })
+  }
+
+  useEffect(() => {
+    void loadInventoryData()
+  }, [])
+
+  const handleCreateItem = async () => {
+    if (!addForm.name || !addForm.category || !addForm.location || addForm.totalQuantity <= 0 || addForm.value <= 0) {
+      setAddError('Please fill all fields with valid values.')
+      return
+    }
+    setAdding(true)
+    setAddError('')
+    try {
+      await api.createInventoryItem({
+        name: addForm.name,
+        category: addForm.category,
+        totalQuantity: addForm.totalQuantity,
+        value: addForm.value,
+        location: addForm.location,
+      })
+      await loadInventoryData()
+      setAddOpen(false)
+      setAddForm({ name: '', category: '', totalQuantity: 0, value: 0, location: '' })
+    } catch {
+      setAddError('Could not add inventory item.')
+    } finally {
+      setAdding(false)
+    }
+  }
 
   const filteredItems = inventoryItems.filter((item) => {
     const matchesSearch = searchQuery === '' ||
@@ -165,7 +199,7 @@ export function Inventory() {
           </TabsList>
 
           {canEdit('inventory') && (
-            <Dialog>
+            <Dialog open={addOpen} onOpenChange={setAddOpen}>
               <DialogTrigger asChild>
                 <Button size="sm">
                   <Plus className="mr-2 h-4 w-4" />
@@ -180,12 +214,12 @@ export function Inventory() {
                 <div className="grid gap-4 py-4">
                   <div className="grid gap-2">
                     <label className="text-sm font-medium">Item Name</label>
-                    <Input placeholder="e.g., Crystal Chandelier" />
+                    <Input placeholder="e.g., Crystal Chandelier" value={addForm.name} onChange={(e) => setAddForm((prev) => ({ ...prev, name: e.target.value }))} />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="grid gap-2">
                       <label className="text-sm font-medium">Category</label>
-                      <Select>
+                      <Select value={addForm.category} onValueChange={(value) => setAddForm((prev) => ({ ...prev, category: value }))}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select" />
                         </SelectTrigger>
@@ -198,23 +232,24 @@ export function Inventory() {
                     </div>
                     <div className="grid gap-2">
                       <label className="text-sm font-medium">Quantity</label>
-                      <Input type="number" placeholder="0" />
+                      <Input type="number" placeholder="0" value={addForm.totalQuantity || ''} onChange={(e) => setAddForm((prev) => ({ ...prev, totalQuantity: Number(e.target.value) || 0 }))} />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="grid gap-2">
                       <label className="text-sm font-medium">Value (₹)</label>
-                      <Input type="number" placeholder="0" />
+                      <Input type="number" placeholder="0" value={addForm.value || ''} onChange={(e) => setAddForm((prev) => ({ ...prev, value: Number(e.target.value) || 0 }))} />
                     </div>
                     <div className="grid gap-2">
                       <label className="text-sm font-medium">Location</label>
-                      <Input placeholder="Warehouse A" />
+                      <Input placeholder="Warehouse A" value={addForm.location} onChange={(e) => setAddForm((prev) => ({ ...prev, location: e.target.value }))} />
                     </div>
                   </div>
+                  {addError && <p className="text-sm text-red-600">{addError}</p>}
                 </div>
                 <DialogFooter>
-                  <Button variant="outline">Cancel</Button>
-                  <Button>Add Item</Button>
+                  <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
+                  <Button onClick={() => void handleCreateItem()} disabled={adding}>{adding ? 'Adding...' : 'Add Item'}</Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -333,7 +368,7 @@ export function Inventory() {
                     return (
                       <div key={data.month} className="rounded-lg border p-4">
                         <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium">{data.month} 2024</span>
+                          <span className="font-medium">{data.month}</span>
                           {isShortage && (
                             <Badge variant="error" className="text-xs">
                               <AlertTriangle className="h-3 w-3 mr-1" />
@@ -369,50 +404,63 @@ export function Inventory() {
                 <CardTitle className="text-base font-semibold">Recommended Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-                  <div className="flex items-start gap-3">
-                    <Truck className="h-5 w-5 text-amber-600 mt-0.5" />
-                    <div>
-                      <p className="font-medium text-amber-800">Rent Additional Chairs</p>
-                      <p className="text-sm text-amber-700 mt-1">
-                        Forecast shows 150 chair shortage for April weddings. Recommend renting from vendor.
-                      </p>
-                      <Button size="sm" variant="outline" className="mt-2">
-                        View Vendors
-                      </Button>
+                {recommendations.map((item) => {
+                  const isWarning = item.severity === 'warning'
+                  const isError = item.severity === 'error'
+                  const isSuccess = item.severity === 'success'
+                  const Icon = isError ? AlertTriangle : isWarning ? Truck : isSuccess ? Package : TrendingUp
+                  return (
+                    <div
+                      key={item.id}
+                      className={cn(
+                        'rounded-lg border p-4',
+                        isError && 'border-red-200 bg-red-50',
+                        isWarning && 'border-amber-200 bg-amber-50',
+                        isSuccess && 'border-emerald-200 bg-emerald-50',
+                        !isError && !isWarning && !isSuccess && 'border-blue-200 bg-blue-50'
+                      )}
+                    >
+                      <div className="flex items-start gap-3">
+                        <Icon
+                          className={cn(
+                            'h-5 w-5 mt-0.5',
+                            isError && 'text-red-600',
+                            isWarning && 'text-amber-600',
+                            isSuccess && 'text-emerald-600',
+                            !isError && !isWarning && !isSuccess && 'text-blue-600'
+                          )}
+                        />
+                        <div>
+                          <p
+                            className={cn(
+                              'font-medium',
+                              isError && 'text-red-800',
+                              isWarning && 'text-amber-800',
+                              isSuccess && 'text-emerald-800',
+                              !isError && !isWarning && !isSuccess && 'text-blue-800'
+                            )}
+                          >
+                            {item.title}
+                          </p>
+                          <p
+                            className={cn(
+                              'text-sm mt-1',
+                              isError && 'text-red-700',
+                              isWarning && 'text-amber-700',
+                              isSuccess && 'text-emerald-700',
+                              !isError && !isWarning && !isSuccess && 'text-blue-700'
+                            )}
+                          >
+                            {item.message}
+                          </p>
+                          <Button size="sm" variant="outline" className="mt-2">
+                            {item.actionLabel}
+                          </Button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-                  <div className="flex items-start gap-3">
-                    <Package className="h-5 w-5 text-blue-600 mt-0.5" />
-                    <div>
-                      <p className="font-medium text-blue-800">Restock LED Lights</p>
-                      <p className="text-sm text-blue-700 mt-1">
-                        Current stock at 60%. Order 100 more units to meet May demand.
-                      </p>
-                      <Button size="sm" variant="outline" className="mt-2">
-                        Create PO
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5" />
-                    <div>
-                      <p className="font-medium text-red-800">Repair Vintage Frames</p>
-                      <p className="text-sm text-red-700 mt-1">
-                        15 frames marked as fair condition. Schedule repair before next event.
-                      </p>
-                      <Button size="sm" variant="outline" className="mt-2">
-                        Schedule Repair
-                      </Button>
-                    </div>
-                  </div>
-                </div>
+                  )
+                })}
               </CardContent>
             </Card>
           </div>

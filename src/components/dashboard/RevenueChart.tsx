@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   AreaChart,
@@ -8,9 +9,18 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { revenueData } from '@/data/dummy-data'
+import { api } from '@/lib/api'
 
 export function RevenueChart() {
+  const [revenueData, setRevenueData] = useState<Array<Record<string, string | number>>>([])
+
+  useEffect(() => {
+    void api
+      .getDashboardOverview()
+      .then((data) => setRevenueData(data.revenueData))
+      .catch(() => setRevenueData([]))
+  }, [])
+
   return (
     <Card className="col-span-2">
       <CardHeader className="pb-2">
@@ -40,7 +50,7 @@ export function RevenueChart() {
                 axisLine={false}
                 tickLine={false}
                 tick={{ fill: '#64748b', fontSize: 12 }}
-                tickFormatter={(value) => `₹${(value / 100000).toFixed(0)}L`}
+                tickFormatter={(value) => `₹${(Number(value) / 100000).toFixed(0)}L`}
               />
               <Tooltip
                 contentStyle={{

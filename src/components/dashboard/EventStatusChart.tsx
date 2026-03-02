@@ -1,10 +1,20 @@
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
-import { eventStatusData } from '@/data/dummy-data'
+import { api } from '@/lib/api'
 
 const COLORS = ['#b8977e', '#d4b896', '#e8d5c4', '#94a3b8', '#cbd5e1', '#10b981']
 
 export function EventStatusChart() {
+  const [eventStatusData, setEventStatusData] = useState<Array<Record<string, string | number>>>([])
+
+  useEffect(() => {
+    void api
+      .getDashboardOverview()
+      .then((data) => setEventStatusData(data.eventStatusData))
+      .catch(() => setEventStatusData([]))
+  }, [])
+
   return (
     <Card>
       <CardHeader className="pb-2">

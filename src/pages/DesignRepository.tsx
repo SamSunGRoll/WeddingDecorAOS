@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,11 +30,15 @@ import {
   Tag,
   Image as ImageIcon,
 } from 'lucide-react'
-import { designs, themes, venueTypes, colorPalettes } from '@/data/dummy-data'
 import { formatCurrency, formatDate, cn } from '@/lib/utils'
 import type { Design } from '@/types'
+import { api } from '@/lib/api'
 
 export function DesignRepository() {
+  const [designs, setDesigns] = useState<Design[]>([])
+  const [themes, setThemes] = useState<string[]>([])
+  const [venueTypes, setVenueTypes] = useState<string[]>([])
+  const [colorPalettes, setColorPalettes] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedTheme, setSelectedTheme] = useState<string>('all')
   const [selectedVenue, setSelectedVenue] = useState<string>('all')
@@ -42,6 +46,27 @@ export function DesignRepository() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [selectedDesign, setSelectedDesign] = useState<Design | null>(null)
   const [favorites, setFavorites] = useState<Set<string>>(new Set())
+  const [duplicateMessage, setDuplicateMessage] = useState('')
+
+  const loadDesigns = () => {
+    return Promise.all([api.getDesigns(), api.getMeta()])
+      .then(([designsData, meta]) => {
+        setDesigns(designsData)
+        setThemes(meta.themes || [])
+        setVenueTypes(meta.venueTypes || [])
+        setColorPalettes(meta.colorPalettes || [])
+      })
+      .catch(() => {
+        setDesigns([])
+        setThemes([])
+        setVenueTypes([])
+        setColorPalettes([])
+      })
+  }
+
+  useEffect(() => {
+    void loadDesigns()
+  }, [])
 
   const filteredDesigns = designs.filter((design) => {
     const matchesSearch =
@@ -64,6 +89,17 @@ export function DesignRepository() {
       newFavorites.add(id)
     }
     setFavorites(newFavorites)
+  }
+
+  const handleDuplicate = async (designId: string) => {
+    setDuplicateMessage('')
+    try {
+      const duplicated = await api.duplicateDesign(designId)
+      await loadDesigns()
+      setDuplicateMessage(`Duplicated as "${duplicated.name}".`)
+    } catch {
+      setDuplicateMessage('Could not duplicate design.')
+    }
   }
 
   return (
@@ -149,6 +185,7 @@ export function DesignRepository() {
           Showing <span className="font-medium text-foreground">{filteredDesigns.length}</span> designs
         </p>
       </div>
+      {duplicateMessage && <p className="text-sm text-muted-foreground">{duplicateMessage}</p>}
 
       {/* Design Grid */}
       {viewMode === 'grid' ? (
@@ -173,7 +210,7 @@ export function DesignRepository() {
                     className="h-8"
                     onClick={(e) => {
                       e.stopPropagation()
-                      // Duplicate logic
+                      void handleDuplicate(design.id)
                     }}
                   >
                     <Copy className="mr-1 h-3 w-3" />
@@ -261,7 +298,10 @@ export function DesignRepository() {
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <Button size="icon" variant="ghost">
+                  <Button size="icon" variant="ghost" onClick={(e) => {
+                    e.stopPropagation()
+                    void handleDuplicate(design.id)
+                  }}>
                     <Copy className="h-4 w-4" />
                   </Button>
                   <Button
@@ -405,7 +445,7 @@ export function DesignRepository() {
                 <Button variant="outline" onClick={() => setSelectedDesign(null)}>
                   Close
                 </Button>
-                <Button variant="gold">
+                <Button variant="gold" onClick={() => void handleDuplicate(selectedDesign.id)}>
                   <Copy className="mr-2 h-4 w-4" />
                   Duplicate Design
                 </Button>

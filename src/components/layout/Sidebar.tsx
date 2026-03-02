@@ -9,13 +9,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   LayoutDashboard,
   Calculator,
   Package,
@@ -25,13 +18,11 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  Users,
   Boxes,
   Wand2,
 } from 'lucide-react'
 import { useAuth, type Module } from '@/hooks/useAuth'
 import tieInLogo from '@/assets/tie-in_logo.png'
-import type { UserRole } from '@/types'
 
 interface NavItem {
   title: string
@@ -52,27 +43,9 @@ const navItems: NavItem[] = [
   { title: 'AI Features', href: '/ai-features', icon: Wand2, module: 'dashboard', badge: 'Soon' },
 ]
 
-const roleLabels: Record<UserRole, string> = {
-  admin: 'Admin',
-  designer: 'Designer',
-  production_manager: 'Production Mgr',
-  procurement: 'Procurement',
-  sales: 'Sales',
-  finance: 'Finance',
-}
-
-const roleDescriptions: Record<UserRole, string> = {
-  admin: 'Full system access',
-  designer: 'Design & costing access',
-  production_manager: 'Production & workflow',
-  procurement: 'Materials & inventory',
-  sales: 'Client-facing reports',
-  finance: 'Approvals & reports',
-}
-
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
-  const { role, setRole, canView } = useAuth()
+  const { canView } = useAuth()
 
   const visibleNavItems = navItems.filter((item) => canView(item.module))
 
@@ -103,33 +76,6 @@ export function Sidebar() {
             )}
           </div>
         </div>
-
-        {/* Role Switcher (for demo) */}
-        {!collapsed && (
-          <div className="border-b border-border p-3">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-              <Users className="h-3 w-3" />
-              <span>Switch Role (Demo)</span>
-            </div>
-            <Select value={role} onValueChange={(v) => setRole(v as UserRole)}>
-              <SelectTrigger className="h-9 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(roleLabels).map(([value, label]) => (
-                  <SelectItem key={value} value={value} className="text-xs">
-                    <div className="flex flex-col">
-                      <span className="font-medium">{label}</span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {roleDescriptions[value as UserRole]}
-                      </span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
 
         {/* Navigation */}
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">

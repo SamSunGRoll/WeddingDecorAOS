@@ -6,3 +6,6 @@ export * from './DesignRepository'
 export * from './Reports'
 export * from './Inventory'
 export * from './AIFeatures'
+export * from './Settings'
+
+export * from './Login'

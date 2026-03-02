@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,6 +13,7 @@ import {
 } from '@/components/ui/select'
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -32,9 +34,10 @@ import {
   Save,
   Send,
 } from 'lucide-react'
-import { costItems, events, costSheets } from '@/data/dummy-data'
 import { formatCurrency, cn } from '@/lib/utils'
-import type { CostItem, CostCategory } from '@/types'
+import type { CostItem, CostCategory, CostSheet, Event } from '@/types'
+import { api } from '@/lib/api'
+import { useAuth } from '@/hooks/useAuth'
 
 const categories: { value: CostCategory; label: string }[] = [
   { value: 'flowers', label: 'Flowers' },
@@ -55,10 +58,46 @@ const statusConfig = {
 }
 
 export function CostingEngine() {
-  const [selectedEvent, setSelectedEvent] = useState(events[0].id)
-  const [items, setItems] = useState<CostItem[]>(costItems.slice(0, 10))
+  const [searchParams] = useSearchParams()
+  const { user } = useAuth()
+  const [events, setEvents] = useState<Event[]>([])
+  const [costItems, setCostItems] = useState<CostItem[]>([])
+  const [costSheets, setCostSheets] = useState<CostSheet[]>([])
+  const [selectedEvent, setSelectedEvent] = useState('')
+  const [items, setItems] = useState<CostItem[]>([])
   const [margin, setMargin] = useState(25)
   const [showHistory, setShowHistory] = useState(false)
+  const [saveMessage, setSaveMessage] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
+  const [addForm, setAddForm] = useState({
+    category: '' as CostCategory | '',
+    name: '',
+    unit: '',
+    quantity: 0,
+    unitPrice: 0,
+  })
+
+  useEffect(() => {
+    void Promise.all([api.getEvents(), api.getCostItems(), api.getCostSheets()])
+      .then(([eventsData, costItemsData, costSheetsData]) => {
+        setEvents(eventsData)
+        setCostItems(costItemsData)
+        setCostSheets(costSheetsData)
+        const eventFromQuery = searchParams.get('event')
+        const matchedEvent = eventsData.find((event) => event.id === eventFromQuery)
+        if (matchedEvent) {
+          setSelectedEvent(matchedEvent.id)
+        } else if (eventsData.length > 0) {
+          setSelectedEvent(eventsData[0].id)
+        }
+      })
+      .catch(() => {
+        setEvents([])
+        setCostItems([])
+        setCostSheets([])
+      })
+  }, [searchParams])
 
   const subtotal = items.reduce((sum, item) => sum + item.totalPrice, 0)
   const marginAmount = (subtotal * margin) / 100
@@ -78,9 +117,112 @@ export function CostingEngine() {
     setItems(items.filter((item) => item.id !== id))
   }
 
-  const currentSheet = costSheets.find((cs) => cs.eventId === selectedEvent)
+  const currentSheet = useMemo(
+    () => costSheets.find((cs) => cs.eventId === selectedEvent),
+    [costSheets, selectedEvent]
+  )
+  const eventSheetHistory = useMemo(
+    () =>
+      costSheets
+        .filter((sheet) => sheet.eventId === selectedEvent)
+        .sort((a, b) => b.version - a.version),
+    [costSheets, selectedEvent]
+  )
+
+  useEffect(() => {
+    if (!selectedEvent) return
+    if (currentSheet) {
+      setItems(currentSheet.items)
+      setMargin(currentSheet.margin)
+      return
+    }
+    setItems(costItems.slice(0, 10))
+    setMargin(25)
+  }, [selectedEvent, currentSheet, costItems])
+
   const status = currentSheet?.status || 'draft'
   const StatusIcon = statusConfig[status].icon
+
+  const refreshCostSheets = async () => {
+    const latest = await api.getCostSheets()
+    setCostSheets(latest)
+  }
+
+  const persistCostSheet = async (targetStatus: 'draft' | 'pending_approval') => {
+    if (!selectedEvent || items.length === 0 || !user) return
+    setSaving(true)
+    setSaveMessage('')
+    try {
+      await api.createCostSheet({
+        eventId: selectedEvent,
+        margin,
+        items: items.map((item) => ({
+          category: item.category,
+          name: item.name,
+          unit: item.unit,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          notes: item.notes,
+        })),
+        createdBy: user.name,
+        status: targetStatus,
+      })
+      await refreshCostSheets()
+      setSaveMessage(targetStatus === 'draft' ? 'Draft saved successfully.' : 'Submitted for approval.')
+    } catch {
+      setSaveMessage('Could not save cost sheet. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const downloadBlob = (content: string, fileName: string, contentType: string) => {
+    const blob = new Blob([content], { type: contentType })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = fileName
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleExport = () => {
+    const rows = [
+      ['Category', 'Item', 'Unit', 'Quantity', 'Unit Price', 'Total'],
+      ...items.map((item) => [
+        item.category,
+        item.name,
+        item.unit,
+        String(item.quantity),
+        String(item.unitPrice),
+        String(item.totalPrice),
+      ]),
+    ]
+    const csv = rows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(',')).join('\n')
+    downloadBlob(csv, `cost-sheet-${selectedEvent || 'event'}.csv`, 'text/csv;charset=utf-8;')
+  }
+
+  const handleAddItem = () => {
+    if (!addForm.category || !addForm.name || !addForm.unit || addForm.quantity <= 0 || addForm.unitPrice <= 0) {
+      setSaveMessage('Please provide valid values to add an item.')
+      return
+    }
+    setItems((prev) => [
+      ...prev,
+      {
+        id: `local-${Date.now()}`,
+        category: addForm.category as CostCategory,
+        name: addForm.name,
+        unit: addForm.unit,
+        quantity: addForm.quantity,
+        unitPrice: addForm.unitPrice,
+        totalPrice: addForm.quantity * addForm.unitPrice,
+      },
+    ])
+    setAddForm({ category: '', name: '', unit: '', quantity: 0, unitPrice: 0 })
+    setSaveMessage('')
+    setAddOpen(false)
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -109,12 +251,13 @@ export function CostingEngine() {
             <History className="mr-2 h-4 w-4" />
             Version History
           </Button>
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={handleExport}>
             <Download className="mr-2 h-4 w-4" />
             Export
           </Button>
         </div>
       </div>
+      {saveMessage && <p className="text-sm text-muted-foreground">{saveMessage}</p>}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         {/* Main Cost Sheet */}
@@ -122,7 +265,7 @@ export function CostingEngine() {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base font-semibold">Cost Sheet Builder</CardTitle>
-              <Dialog>
+              <Dialog open={addOpen} onOpenChange={setAddOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm">
                     <Plus className="mr-2 h-4 w-4" />
@@ -139,7 +282,7 @@ export function CostingEngine() {
                   <div className="grid gap-4 py-4">
                     <div className="grid gap-2">
                       <label className="text-sm font-medium">Category</label>
-                      <Select>
+                      <Select value={addForm.category} onValueChange={(value) => setAddForm((prev) => ({ ...prev, category: value as CostCategory }))}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select category" />
                         </SelectTrigger>
@@ -154,26 +297,28 @@ export function CostingEngine() {
                     </div>
                     <div className="grid gap-2">
                       <label className="text-sm font-medium">Item Name</label>
-                      <Input placeholder="e.g., Red Roses" />
+                      <Input placeholder="e.g., Red Roses" value={addForm.name} onChange={(e) => setAddForm((prev) => ({ ...prev, name: e.target.value }))} />
                     </div>
                     <div className="grid grid-cols-3 gap-4">
                       <div className="grid gap-2">
                         <label className="text-sm font-medium">Unit</label>
-                        <Input placeholder="kg" />
+                        <Input placeholder="kg" value={addForm.unit} onChange={(e) => setAddForm((prev) => ({ ...prev, unit: e.target.value }))} />
                       </div>
                       <div className="grid gap-2">
                         <label className="text-sm font-medium">Quantity</label>
-                        <Input type="number" placeholder="0" />
+                        <Input type="number" placeholder="0" value={addForm.quantity || ''} onChange={(e) => setAddForm((prev) => ({ ...prev, quantity: Number(e.target.value) || 0 }))} />
                       </div>
                       <div className="grid gap-2">
                         <label className="text-sm font-medium">Unit Price</label>
-                        <Input type="number" placeholder="0" />
+                        <Input type="number" placeholder="0" value={addForm.unitPrice || ''} onChange={(e) => setAddForm((prev) => ({ ...prev, unitPrice: Number(e.target.value) || 0 }))} />
                       </div>
                     </div>
                   </div>
                   <DialogFooter>
-                    <Button variant="outline">Cancel</Button>
-                    <Button>Add Item</Button>
+                    <DialogClose asChild>
+                      <Button variant="outline">Cancel</Button>
+                    </DialogClose>
+                    <Button onClick={handleAddItem}>Add Item</Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -331,11 +476,11 @@ export function CostingEngine() {
               <CardTitle className="text-base font-semibold">Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button className="w-full" variant="outline">
+              <Button className="w-full" variant="outline" disabled={saving || !user || items.length === 0} onClick={() => void persistCostSheet('draft')}>
                 <Save className="mr-2 h-4 w-4" />
-                Save Draft
+                {saving ? 'Saving...' : 'Save Draft'}
               </Button>
-              <Button className="w-full" variant="gold">
+              <Button className="w-full" variant="gold" disabled={saving || !user || items.length === 0} onClick={() => void persistCostSheet('pending_approval')}>
                 <Send className="mr-2 h-4 w-4" />
                 Submit for Approval
               </Button>
@@ -357,30 +502,33 @@ export function CostingEngine() {
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
-              {[3, 2, 1].map((version) => (
+              {eventSheetHistory.map((sheet) => (
                 <div
-                  key={version}
+                  key={sheet.id}
                   className={cn(
                     'rounded-lg border p-3 transition-colors cursor-pointer',
-                    version === 3 ? 'border-gold-300 bg-gold-50' : 'hover:bg-muted/50'
+                    sheet.id === currentSheet?.id ? 'border-gold-300 bg-gold-50' : 'hover:bg-muted/50'
                   )}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Version {version}</span>
-                    {version === 3 && (
+                    <span className="text-sm font-medium">Version {sheet.version}</span>
+                    {sheet.id === currentSheet?.id && (
                       <Badge variant="gold" className="text-xs">
                         Current
                       </Badge>
                     )}
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {version === 3 ? 'Approved' : version === 2 ? 'Revised' : 'Initial draft'}
+                    {statusConfig[sheet.status].label}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Feb {15 + version}, 2024
+                    {new Date(sheet.createdAt).toLocaleDateString()}
                   </p>
                 </div>
               ))}
+              {eventSheetHistory.length === 0 && (
+                <p className="text-xs text-muted-foreground">No cost sheet versions found for this event.</p>
+              )}
             </CardContent>
           </Card>
         </div>

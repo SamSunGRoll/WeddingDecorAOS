@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { CalendarDays, IndianRupee, Clock, TrendingDown, MapPin, AlertTriangle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -12,70 +13,74 @@ import {
 } from '@/components/dashboard'
 import { formatCurrency } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
-import { events } from '@/data/dummy-data'
+import { api, type DashboardInsightsResponse, type DashboardOverview } from '@/lib/api'
+import type { Event } from '@/types'
 
-// Venue-wise metrics
-const venueMetrics = [
-  { venue: 'Taj Palace, Delhi', events: 8, revenue: 3200000, utilization: 85 },
-  { venue: 'ITC Grand Chola', events: 6, revenue: 2400000, utilization: 72 },
-  { venue: 'Leela Palace, Jaipur', events: 5, revenue: 2100000, utilization: 68 },
-  { venue: 'Oberoi Udaivilas', events: 4, revenue: 2600000, utilization: 90 },
-]
-
-// Team metrics
-const teamMetrics = [
-  { name: 'Rahul Mehta', role: 'Designer', tasks: 12, completed: 10, rating: 4.8 },
-  { name: 'Anjali Verma', role: 'Production', tasks: 8, completed: 7, rating: 4.6 },
-  { name: 'Vikram Singh', role: 'Procurement', tasks: 15, completed: 14, rating: 4.9 },
-  { name: 'Neha Kapoor', role: 'Sales', tasks: 10, completed: 9, rating: 4.7 },
-]
-
-// Pending approvals
-const pendingApprovals = [
-  { id: 1, type: 'Cost Sheet', event: 'Patel-Gupta Reception', amount: 563640, submittedBy: 'Priya Sharma', date: '2024-02-27' },
-  { id: 2, type: 'Cost Sheet', event: 'Mehta Sangeet Night', amount: 365400, submittedBy: 'Anjali Verma', date: '2024-02-26' },
-  { id: 3, type: 'Material PO', event: 'Sharma-Kapoor Wedding', amount: 125000, submittedBy: 'Vikram Singh', date: '2024-02-28' },
-]
+const kpiIconMap = {
+  'Total Events': CalendarDays,
+  'Total Budget': IndianRupee,
+  'Approved Cost Sheets': Clock,
+  'Material Variance': TrendingDown,
+  'Events This Month': CalendarDays,
+  'Total Revenue': IndianRupee,
+  'Avg. Costing Time': Clock,
+} as const
 
 export function Dashboard() {
-  const { role, canApprove } = useAuth()
+  const { role, canApprove, user } = useAuth()
+  const [events, setEvents] = useState<Event[]>([])
+  const [overview, setOverview] = useState<DashboardOverview | null>(null)
+  const [insights, setInsights] = useState<DashboardInsightsResponse | null>(null)
+
+  useEffect(() => {
+    void Promise.all([api.getEvents(), api.getDashboardOverview(), api.getDashboardInsights()])
+      .then(([eventData, overviewData, insightsData]) => {
+        setEvents(eventData)
+        setOverview(overviewData)
+        setInsights(insightsData)
+      })
+      .catch(() => {
+        setEvents([])
+        setOverview(null)
+        setInsights(null)
+      })
+  }, [])
+
+  const pendingApprovals = insights?.pendingApprovals ?? []
+  const venueMetrics = insights?.venueMetrics ?? []
+  const teamMetrics = insights?.teamMetrics ?? []
+  const roleStats = role ? insights?.roleStats?.[role] ?? [] : []
+  const roleCardTitle = role === 'designer' ? 'Your Design Stats' : role === 'procurement' ? 'Procurement Overview' : null
+
+  const handleApprovalAction = async (sheetId: string, approved: boolean) => {
+    if (!user) return
+    try {
+      await api.approveCostSheet(sheetId, user.name, approved)
+      const [overviewData, insightsData] = await Promise.all([api.getDashboardOverview(), api.getDashboardInsights()])
+      setOverview(overviewData)
+      setInsights(insightsData)
+    } catch {
+      // keep UI responsive; panel will refresh on next load
+    }
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
       {/* KPI Cards - Responsive Grid */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-        <KPICard
-          title="Events This Month"
-          value="12"
-          change={15}
-          changeType="increase"
-          icon={CalendarDays}
-          tooltip="Total number of events scheduled for the current month"
-        />
-        <KPICard
-          title="Total Revenue"
-          value={formatCurrency(5840000)}
-          change={23}
-          changeType="increase"
-          icon={IndianRupee}
-          tooltip="Total revenue from confirmed events this month"
-        />
-        <KPICard
-          title="Avg. Costing Time"
-          value="18 min"
-          change={-42}
-          changeType="increase"
-          icon={Clock}
-          tooltip="Average time to prepare a cost sheet (down from 48 hours)"
-        />
-        <KPICard
-          title="Material Variance"
-          value="4.2%"
-          change={-12}
-          changeType="increase"
-          icon={TrendingDown}
-          tooltip="Difference between estimated and actual material usage"
-        />
+        {(overview?.kpis ?? []).slice(0, 4).map((kpi) => {
+          const Icon = kpiIconMap[kpi.label as keyof typeof kpiIconMap] ?? CalendarDays
+          return (
+            <KPICard
+              key={kpi.label}
+              title={kpi.label}
+              value={kpi.value}
+              change={kpi.change}
+              changeType={kpi.changeType}
+              icon={Icon}
+            />
+          )
+        })}
       </div>
 
       {/* Role-specific dashboards */}
@@ -106,10 +111,10 @@ export function Dashboard() {
                   <div className="flex items-center gap-3">
                     <span className="text-lg font-bold text-gold-600">{formatCurrency(item.amount)}</span>
                     <div className="flex gap-2">
-                      <button className="px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                      <button className="px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors" onClick={() => void handleApprovalAction(item.id, false)}>
                         Reject
                       </button>
-                      <button className="px-3 py-1.5 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors">
+                      <button className="px-3 py-1.5 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors" onClick={() => void handleApprovalAction(item.id, true)}>
                         Approve
                       </button>
                     </div>
@@ -279,57 +284,30 @@ export function Dashboard() {
       </Tabs>
 
       {/* Quick Stats for specific roles */}
-      {role === 'designer' && (
+      {roleCardTitle && roleStats.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold">Your Design Stats</CardTitle>
+            <CardTitle className="text-base font-semibold">{roleCardTitle}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div className="text-center p-4 rounded-xl bg-muted">
-                <p className="text-2xl font-bold">24</p>
-                <p className="text-xs text-muted-foreground">Designs Created</p>
-              </div>
-              <div className="text-center p-4 rounded-xl bg-muted">
-                <p className="text-2xl font-bold">18</p>
-                <p className="text-xs text-muted-foreground">Designs Reused</p>
-              </div>
-              <div className="text-center p-4 rounded-xl bg-muted">
-                <p className="text-2xl font-bold">4.8</p>
-                <p className="text-xs text-muted-foreground">Avg Rating</p>
-              </div>
-              <div className="text-center p-4 rounded-xl bg-emerald-50">
-                <p className="text-2xl font-bold text-emerald-600">92%</p>
-                <p className="text-xs text-muted-foreground">Approval Rate</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {role === 'procurement' && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold">Procurement Overview</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div className="text-center p-4 rounded-xl bg-muted">
-                <p className="text-2xl font-bold">8</p>
-                <p className="text-xs text-muted-foreground">Active POs</p>
-              </div>
-              <div className="text-center p-4 rounded-xl bg-amber-50">
-                <p className="text-2xl font-bold text-amber-600">3</p>
-                <p className="text-xs text-muted-foreground">Pending Delivery</p>
-              </div>
-              <div className="text-center p-4 rounded-xl bg-muted">
-                <p className="text-2xl font-bold">{formatCurrency(450000)}</p>
-                <p className="text-xs text-muted-foreground">This Month</p>
-              </div>
-              <div className="text-center p-4 rounded-xl bg-emerald-50">
-                <p className="text-2xl font-bold text-emerald-600">12%</p>
-                <p className="text-xs text-muted-foreground">Cost Savings</p>
-              </div>
+              {roleStats.map((item) => (
+                <div
+                  key={item.label}
+                  className={
+                    item.tone === 'success'
+                      ? 'text-center p-4 rounded-xl bg-emerald-50'
+                      : item.tone === 'warning'
+                        ? 'text-center p-4 rounded-xl bg-amber-50'
+                        : 'text-center p-4 rounded-xl bg-muted'
+                  }
+                >
+                  <p className={item.tone === 'success' ? 'text-2xl font-bold text-emerald-600' : item.tone === 'warning' ? 'text-2xl font-bold text-amber-600' : 'text-2xl font-bold'}>
+                    {item.value}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{item.label}</p>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>

@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
@@ -24,17 +25,97 @@ import {
   Cell,
 } from 'recharts'
 import { Download, FileSpreadsheet, Calendar, TrendingUp } from 'lucide-react'
-import {
-  costVarianceData,
-  materialUsageData,
-  resourceUtilizationData,
-  revenueData,
-} from '@/data/dummy-data'
+import { api } from '@/lib/api'
 import { formatCurrency } from '@/lib/utils'
 
 const COLORS = ['#b8977e', '#d4b896', '#e8d5c4', '#94a3b8', '#cbd5e1']
 
 export function Reports() {
+  const [costVarianceData, setCostVarianceData] = useState<Array<Record<string, string | number>>>([])
+  const [materialUsageData, setMaterialUsageData] = useState<Array<Record<string, string | number>>>([])
+  const [resourceUtilizationData, setResourceUtilizationData] = useState<Array<Record<string, string | number>>>([])
+  const [revenueData, setRevenueData] = useState<Array<Record<string, string | number>>>([])
+
+  useEffect(() => {
+    void api
+      .getDashboardOverview()
+      .then((data) => {
+        setCostVarianceData(data.costVarianceData)
+        setMaterialUsageData(data.materialUsageData)
+        setResourceUtilizationData(data.resourceUtilizationData)
+        setRevenueData(data.revenueData)
+      })
+      .catch(() => {
+        setCostVarianceData([])
+        setMaterialUsageData([])
+        setResourceUtilizationData([])
+        setRevenueData([])
+      })
+  }, [])
+
+  const materialSummary = useMemo(() => {
+    const totals = materialUsageData.reduce<{ flowers: number; fabric: number; props: number }>(
+      (acc, item) => {
+        acc.flowers += Number(item.flowers || 0)
+        acc.fabric += Number(item.fabric || 0)
+        acc.props += Number(item.props || 0)
+        return acc
+      },
+      { flowers: 0, fabric: 0, props: 0 }
+    )
+    return [
+      { label: 'Flowers This Month', value: `${totals.flowers.toFixed(0)} kg` },
+      { label: 'Fabric This Month', value: `${totals.fabric.toFixed(0)} m` },
+      { label: 'Props This Month', value: `${totals.props.toFixed(0)} units` },
+    ]
+  }, [materialUsageData])
+
+  const revenueSummary = useMemo(() => {
+    const totalRevenue = revenueData.reduce((sum, row) => sum + Number(row.value || 0), 0)
+    const totalEvents = revenueData.reduce((sum, row) => sum + Number(row.events || 0), 0)
+    const averageEventValue = totalEvents > 0 ? totalRevenue / totalEvents : 0
+    const firstValue = Number(revenueData[0]?.value || 0)
+    const lastValue = Number(revenueData[revenueData.length - 1]?.value || 0)
+    const growthRate = firstValue > 0 ? ((lastValue - firstValue) / firstValue) * 100 : 0
+    return {
+      totalRevenue,
+      averageEventValue,
+      totalEvents,
+      growthRate,
+    }
+  }, [revenueData])
+
+  const downloadBlob = (content: string, fileName: string, contentType: string) => {
+    const blob = new Blob([content], { type: contentType })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = fileName
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleExportExcel = () => {
+    const rows = [
+      ['Month', 'Revenue', 'Events'],
+      ...revenueData.map((row) => [String(row.name || ''), String(row.value || 0), String(row.events || 0)]),
+    ]
+    const csv = rows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(',')).join('\n')
+    downloadBlob(csv, 'revenue-report.csv', 'text/csv;charset=utf-8;')
+  }
+
+  const handleDownloadReport = () => {
+    const report = {
+      generatedAt: new Date().toISOString(),
+      costVarianceData,
+      materialUsageData,
+      resourceUtilizationData,
+      revenueData,
+      summary: revenueSummary,
+    }
+    downloadBlob(JSON.stringify(report, null, 2), 'operations-report.json', 'application/json;charset=utf-8;')
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
@@ -55,11 +136,11 @@ export function Reports() {
           </Select>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline">
+          <Button variant="outline" onClick={handleExportExcel}>
             <FileSpreadsheet className="mr-2 h-4 w-4" />
             Export Excel
           </Button>
-          <Button variant="gold">
+          <Button variant="gold" onClick={handleDownloadReport}>
             <Download className="mr-2 h-4 w-4" />
             Download Report
           </Button>
@@ -201,21 +282,17 @@ export function Reports() {
           </Card>
 
           <div className="grid gap-4 md:grid-cols-3">
-            {['Flowers', 'Fabric', 'Props'].map((category, index) => (
-              <Card key={category}>
+            {materialSummary.map((item) => (
+              <Card key={item.label}>
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground">{category} This Month</p>
-                      <p className="mt-1 text-2xl font-bold">
-                        {index === 0 ? '670 kg' : index === 1 ? '450 m' : '245 units'}
-                      </p>
+                      <p className="text-sm text-muted-foreground">{item.label}</p>
+                      <p className="mt-1 text-2xl font-bold">{item.value}</p>
                     </div>
                     <div className="flex items-center gap-1 text-emerald-600">
                       <TrendingUp className="h-4 w-4" />
-                      <span className="text-sm font-medium">
-                        {index === 0 ? '+12%' : index === 1 ? '+8%' : '-5%'}
-                      </span>
+                      <span className="text-sm font-medium">Live</span>
                     </div>
                   </div>
                 </CardContent>
@@ -394,25 +471,27 @@ export function Reports() {
             <Card>
               <CardContent className="p-6">
                 <p className="text-sm text-muted-foreground">Total Revenue (YTD)</p>
-                <p className="mt-1 text-2xl font-bold">{formatCurrency(39600000)}</p>
+                <p className="mt-1 text-2xl font-bold">{formatCurrency(revenueSummary.totalRevenue)}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-6">
                 <p className="text-sm text-muted-foreground">Avg. Event Value</p>
-                <p className="mt-1 text-2xl font-bold">{formatCurrency(3800000)}</p>
+                <p className="mt-1 text-2xl font-bold">{formatCurrency(revenueSummary.averageEventValue)}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-6">
                 <p className="text-sm text-muted-foreground">Total Events</p>
-                <p className="mt-1 text-2xl font-bold">78</p>
+                <p className="mt-1 text-2xl font-bold">{revenueSummary.totalEvents}</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-6">
                 <p className="text-sm text-muted-foreground">Growth Rate</p>
-                <p className="mt-1 text-2xl font-bold text-emerald-600">+18%</p>
+                <p className="mt-1 text-2xl font-bold text-emerald-600">
+                  {`${revenueSummary.growthRate >= 0 ? '+' : ''}${revenueSummary.growthRate.toFixed(1)}%`}
+                </p>
               </CardContent>
             </Card>
           </div>

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -20,8 +21,10 @@ import {
   Clock,
   CheckCircle,
 } from 'lucide-react'
-import { events, users } from '@/data/dummy-data'
 import { formatCurrency, formatDate, getInitials, cn } from '@/lib/utils'
+import { api } from '@/lib/api'
+import { useAuth } from '@/hooks/useAuth'
+import type { User as AppUser } from '@/types'
 import type { Event, EventStatus, WorkflowStage } from '@/types'
 
 const stageConfig: Record<EventStatus, { name: string; color: string }> = {
@@ -33,40 +36,76 @@ const stageConfig: Record<EventStatus, { name: string; color: string }> = {
   completed: { name: 'Completed', color: 'bg-slate-500' },
 }
 
-const initialStages: WorkflowStage[] = [
-  { id: 'design', name: 'Design', events: events.filter((e) => e.status === 'design') },
-  { id: 'costing', name: 'Costing', events: events.filter((e) => e.status === 'costing') },
-  { id: 'procurement', name: 'Procurement', events: events.filter((e) => e.status === 'procurement') },
-  { id: 'production', name: 'Production', events: events.filter((e) => e.status === 'production') },
-  { id: 'setup', name: 'Setup', events: events.filter((e) => e.status === 'setup') },
-  { id: 'completed', name: 'Completed', events: events.filter((e) => e.status === 'completed') },
-]
+
 
 export function WorkflowTracker() {
-  const [stages, setStages] = useState<WorkflowStage[]>(initialStages)
+  const navigate = useNavigate()
+  const [stages, setStages] = useState<WorkflowStage[]>([])
+  const [users, setUsers] = useState<AppUser[]>([])
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
+  const [syncError, setSyncError] = useState('')
+  const { canEdit } = useAuth()
+  const canMoveEvents = canEdit('workflow')
 
-  const handleDragEnd = (result: DropResult) => {
+  useEffect(() => {
+    void Promise.all([api.getWorkflowStages(), api.getUsers()])
+      .then(([stagesData, usersData]) => {
+        setStages(stagesData)
+        setUsers(usersData)
+      })
+      .catch(() => {
+        setStages([])
+        setUsers([])
+      })
+  }, [])
+
+  const handleDragEnd = async (result: DropResult) => {
+    if (!canMoveEvents) return
     const { source, destination } = result
 
     if (!destination) return
     if (source.droppableId === destination.droppableId && source.index === destination.index) return
 
+    const previousStages = stages.map((stage) => ({
+      ...stage,
+      events: stage.events.map((event) => ({ ...event })),
+    }))
+
     const sourceStageIndex = stages.findIndex((s) => s.id === source.droppableId)
     const destStageIndex = stages.findIndex((s) => s.id === destination.droppableId)
+    if (sourceStageIndex < 0 || destStageIndex < 0) return
 
-    const sourceStage = stages[sourceStageIndex]
-    const destStage = stages[destStageIndex]
+    const sourceStage = previousStages[sourceStageIndex]
+    const destStage = previousStages[destStageIndex]
+    const sourceEvents = [...sourceStage.events]
+    const [movedEvent] = sourceEvents.splice(source.index, 1)
+    if (!movedEvent) return
 
-    const [movedEvent] = sourceStage.events.splice(source.index, 1)
-    movedEvent.status = destination.droppableId as EventStatus
-    destStage.events.splice(destination.index, 0, movedEvent)
+    const updatedEvent = { ...movedEvent, status: destination.droppableId as EventStatus }
+    const destinationEvents = [...destStage.events]
+    destinationEvents.splice(destination.index, 0, updatedEvent)
 
-    const newStages = [...stages]
-    newStages[sourceStageIndex] = { ...sourceStage }
-    newStages[destStageIndex] = { ...destStage }
+    const newStages = previousStages.map((stage, index) => {
+      if (index === sourceStageIndex) return { ...stage, events: sourceEvents }
+      if (index === destStageIndex) return { ...stage, events: destinationEvents }
+      return stage
+    })
 
+    setSyncError('')
     setStages(newStages)
+    if (selectedEvent?.id === movedEvent.id) {
+      setSelectedEvent(updatedEvent)
+    }
+
+    try {
+      await api.updateEventStatus(updatedEvent.id, updatedEvent.status)
+    } catch {
+      setStages(previousStages)
+      if (selectedEvent?.id === movedEvent.id) {
+        setSelectedEvent(movedEvent)
+      }
+      setSyncError('Could not save status update. Your change was rolled back.')
+    }
   }
 
   const getDaysUntilEvent = (date: string) => {
@@ -86,6 +125,12 @@ export function WorkflowTracker() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {syncError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {syncError}
+        </div>
+      )}
+
       {/* Legend */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
@@ -133,7 +178,12 @@ export function WorkflowTracker() {
                       const assignedUser = users.find((u) => u.name === event.assignedTo)
 
                       return (
-                        <Draggable key={event.id} draggableId={event.id} index={index}>
+                        <Draggable
+                          key={event.id}
+                          draggableId={event.id}
+                          index={index}
+                          isDragDisabled={!canMoveEvents}
+                        >
                           {(provided, snapshot) => (
                             <Card
                               ref={provided.innerRef}
@@ -289,10 +339,10 @@ export function WorkflowTracker() {
                 <Separator />
 
                 <div className="flex gap-2">
-                  <Button className="flex-1" variant="outline">
+                  <Button className="flex-1" variant="outline" onClick={() => navigate(`/costing?event=${selectedEvent.id}`)}>
                     View Cost Sheet
                   </Button>
-                  <Button className="flex-1" variant="gold">
+                  <Button className="flex-1" variant="gold" onClick={() => navigate(`/materials?event=${selectedEvent.id}`)}>
                     View Details
                   </Button>
                 </div>

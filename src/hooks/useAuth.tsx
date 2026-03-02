@@ -1,10 +1,14 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { User, UserRole } from '@/types'
+import { api, setAuthToken } from '@/lib/api'
 
 interface AuthContextType {
   user: User | null
-  role: UserRole
-  setRole: (role: UserRole) => void
+  role: UserRole | null
+  loading: boolean
+  isAuthenticated: boolean
+  login: (email: string, password: string) => Promise<void>
+  logout: () => void
   hasPermission: (permission: Permission) => boolean
   canView: (module: Module) => boolean
   canEdit: (module: Module) => boolean
@@ -38,7 +42,6 @@ type Permission =
   | 'view_settings'
   | 'edit_settings'
 
-// Comprehensive role-based permissions matrix
 const rolePermissions: Record<UserRole, Permission[]> = {
   admin: [
     'view_dashboard',
@@ -87,7 +90,6 @@ const rolePermissions: Record<UserRole, Permission[]> = {
   ],
 }
 
-// Module to permission mapping
 const modulePermissions: Record<Module, { view: Permission; edit?: Permission; approve?: Permission }> = {
   dashboard: { view: 'view_dashboard' },
   costing: { view: 'view_costing', edit: 'edit_costing', approve: 'approve_costing' },
@@ -99,59 +101,41 @@ const modulePermissions: Record<Module, { view: Permission; edit?: Permission; a
   settings: { view: 'view_settings', edit: 'edit_settings' },
 }
 
-// Default users for each role
-const roleUsers: Record<UserRole, User> = {
-  admin: {
-    id: 'u1',
-    name: 'Priya Sharma',
-    email: 'priya@tiein.com',
-    role: 'admin',
-    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop',
-  },
-  designer: {
-    id: 'u2',
-    name: 'Rahul Mehta',
-    email: 'rahul@tiein.com',
-    role: 'designer',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop',
-  },
-  production_manager: {
-    id: 'u3',
-    name: 'Anjali Verma',
-    email: 'anjali@tiein.com',
-    role: 'production_manager',
-    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop',
-  },
-  procurement: {
-    id: 'u4',
-    name: 'Vikram Singh',
-    email: 'vikram@tiein.com',
-    role: 'procurement',
-  },
-  sales: {
-    id: 'u5',
-    name: 'Neha Kapoor',
-    email: 'neha@tiein.com',
-    role: 'sales',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop',
-  },
-  finance: {
-    id: 'u6',
-    name: 'Amit Patel',
-    email: 'amit@tiein.com',
-    role: 'finance',
-    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop',
-  },
-}
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [role, setRole] = useState<UserRole>('admin')
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  const user = roleUsers[role]
+  useEffect(() => {
+    const storedUser = localStorage.getItem('tiein_user')
+    const storedToken = localStorage.getItem('tiein_access_token')
+
+    if (storedUser && storedToken) {
+      setAuthToken(storedToken)
+      setUser(JSON.parse(storedUser) as User)
+    }
+
+    setLoading(false)
+  }, [])
+
+  const login = async (email: string, password: string) => {
+    const response = await api.login(email, password)
+    setAuthToken(response.accessToken)
+    localStorage.setItem('tiein_user', JSON.stringify(response.user))
+    setUser(response.user)
+  }
+
+  const logout = () => {
+    setAuthToken(null)
+    localStorage.removeItem('tiein_user')
+    setUser(null)
+  }
+
+  const role = user?.role ?? null
 
   const hasPermission = (permission: Permission): boolean => {
+    if (!role) return false
     return rolePermissions[role].includes(permission)
   }
 
@@ -170,8 +154,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return perm ? hasPermission(perm) : false
   }
 
+  const value = useMemo(
+    () => ({
+      user,
+      role,
+      loading,
+      isAuthenticated: Boolean(user),
+      login,
+      logout,
+      hasPermission,
+      canView,
+      canEdit,
+      canApprove,
+    }),
+    [user, role, loading]
+  )
+
   return (
-    <AuthContext.Provider value={{ user, role, setRole, hasPermission, canView, canEdit, canApprove }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   )
@@ -185,5 +185,4 @@ export function useAuth() {
   return context
 }
 
-export { rolePermissions, roleUsers }
 export type { Permission, Module }
