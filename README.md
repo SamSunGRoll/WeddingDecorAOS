@@ -20,6 +20,10 @@ This is the frontend application for the Wedding Décor Operations Automation Sy
   ```bash
   npm run dev
   ```
+- **One-Command Start (Port 5174):**
+  ```bash
+  ./start.sh
+  ```
 - **Build for Production:** Compiles the code into the `dist/` folder.
   ```bash
   npm run build
